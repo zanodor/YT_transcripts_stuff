@@ -1,0 +1,100 @@
+/* Flexbox layout for callout headers */
+.callout-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+.callout-title-inner {
+  flex: 1 1 auto;
+}
+.callout-fold {
+  margin-left: auto;
+}
+
+/* Hide the English callout type and inject Hungarian titles */
+.callout[data-callout="check"] .callout-title-inner strong { display: none; }
+.callout[data-callout="check"] .callout-title-inner::before { content: "Tudd "; }
+
+.callout[data-callout="important"] .callout-title-inner strong { display: none; }
+.callout[data-callout="important"] .callout-title-inner::before { content: "Fontos "; }
+
+.callout[data-callout="fail"] .callout-title-inner strong { display: none; }
+.callout[data-callout="fail"] .callout-title-inner::before { content: "Figyelem "; }
+
+.callout[data-callout="note"] .callout-title-inner strong { display: none; }
+.callout[data-callout="note"] .callout-title-inner::before { content: "Jegyzet "; }
+
+.callout[data-callout="question"] .callout-title-inner strong { display: none; }
+.callout[data-callout="question"] .callout-title-inner::before { content: "Kérdés "; }
+
+.callout[data-callout="example"] .callout-title-inner strong { display: none; }
+.callout[data-callout="example"] .callout-title-inner::before { content: "Példa "; }
+
+.callout[data-callout="abstract"] .callout-title-inner strong { display: none; }
+.callout[data-callout="abstract"] .callout-title-inner::before { content: "Összefoglaló "; }
+
+.callout[data-callout="attention"] .callout-title-inner strong { display: none; }
+.callout[data-callout="attention"] .callout-title-inner::before { content: "Figyelem "; }
+
+.callout[data-callout="bug"] .callout-title-inner strong { display: none; }
+.callout[data-callout="bug"] .callout-title-inner::before { content: "Hiba "; }
+
+.callout[data-callout="caution"] .callout-title-inner strong { display: none; }
+.callout[data-callout="caution"] .callout-title-inner::before { content: "Vigyázat "; }
+
+.callout[data-callout="cite"] .callout-title-inner strong { display: none; }
+.callout[data-callout="cite"] .callout-title-inner::before { content: "Idézet "; }
+
+.callout[data-callout="danger"] .callout-title-inner strong { display: none; }
+.callout[data-callout="danger"] .callout-title-inner::before { content: "Veszély "; }
+
+.callout[data-callout="done"] .callout-title-inner strong { display: none; }
+.callout[data-callout="done"] .callout-title-inner::before { content: "Kész "; }
+
+.callout[data-callout="error"] .callout-title-inner strong { display: none; }
+.callout[data-callout="error"] .callout-title-inner::before { content: "Hiba "; }
+
+.callout[data-callout="failure"] .callout-title-inner strong { display: none; }
+.callout[data-callout="failure"] .callout-title-inner::before { content: "Sikertelen "; }
+
+.callout[data-callout="faq"] .callout-title-inner strong { display: none; }
+.callout[data-callout="faq"] .callout-title-inner::before { content: "GYIK "; }
+
+.callout[data-callout="file"] .callout-title-inner strong { display: none; }
+.callout[data-callout="file"] .callout-title-inner::before { content: "Fájl "; }
+
+.callout[data-callout="help"] .callout-title-inner strong { display: none; }
+.callout[data-callout="help"] .callout-title-inner::before { content: "Segítség "; }
+
+.callout[data-callout="hint"] .callout-title-inner strong { display: none; }
+.callout[data-callout="hint"] .callout-title-inner::before { content: "Útmutatás "; }
+
+.callout[data-callout="info"] .callout-title-inner strong { display: none; }
+.callout[data-callout="info"] .callout-title-inner::before { content: "Információ "; }
+
+.callout[data-callout="missing"] .callout-title-inner strong { display: none; }
+.callout[data-callout="missing"] .callout-title-inner::before { content: "Hiányzik "; }
+
+.callout[data-callout="quote"] .callout-title-inner strong { display: none; }
+.callout[data-callout="quote"] .callout-title-inner::before { content: "Idézet "; }
+
+.callout[data-callout="success"] .callout-title-inner strong { display: none; }
+.callout[data-callout="success"] .callout-title-inner::before { content: "Siker "; }
+
+.callout[data-callout="summary"] .callout-title-inner strong { display: none; }
+.callout[data-callout="summary"] .callout-title-inner::before { content: "Összegzés "; }
+
+.callout[data-callout="tip"] .callout-title-inner strong { display: none; }
+.callout[data-callout="tip"] .callout-title-inner::before { content: "Tipp "; }
+
+.callout[data-callout="tldr"] .callout-title-inner strong { display: none; }
+.callout[data-callout="tldr"] .callout-title-inner::before { content: "Röviden "; }
+
+.callout[data-callout="todo"] .callout-title-inner strong { display: none; }
+.callout[data-callout="todo"] .callout-title-inner::before { content: "Teendő "; }
+
+.callout[data-callout="warning"] .callout-title-inner strong { display: none; }
+.callout[data-callout="warning"] .callout-title-inner::before { content: "Figyelem "; }
+
+.callout[data-callout="details"] .callout-title-inner strong { display: none; }
+.callout[data-callout="details"] .callout-title-inner::before { content: "Részletek"; }

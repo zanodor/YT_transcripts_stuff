@@ -1,0 +1,35 @@
+/* Other plantUML CSS related to colors was in the Autoadaptive_images file */
+
+/* For PNG images */
+/* :root.is-mobile img[src^="https://www.plantuml.com/plantuml/png"] { */
+    /* max-width: 100%; */
+/* } */
+
+/* Target PNG images generated online */
+img[src^="https://www.plantuml.com/plantuml/png"] { /* For local java generated diagrams, this will not be good but I'm always using svg's anyway. For chatgpt info on this, see https://chatgpt.com/c/66fda635-acec-8007-a394-8ffd7aae490e - but I'm at a loss what I'm missing here */
+    max-width: 100%; /* Ensure that the image will not exceed the width of its container*/
+    height: auto; /* Maintain aspect ratio */
+}
+
+/* For SVG images (for local as opposed to published Obsidian, svg must be targeted separately) */
+.block-language-plantuml-svg svg {
+    max-width: 100%; /* Ensure that the image will not exceed the width of its container*/
+    height: auto; /* Maintain aspect ratio */
+}
+/* Maintain aspect ratio is not perfect for me... */
+
+
+
+/* I used to have different snippet for mobile, but I realized the above method is perfect for mobile as well */
+
+/*
+.is-mobile img[src^="https://www.plantuml.com/plantuml/png"] {
+    max-width: 650px;
+}
+
+.is-mobile .block-language-plantuml-svg svg {
+    max-width: 650px;
+    width: 100%; /* Ensure SVG fills its container */
+    height: auto; /* Maintain aspect ratio */
+}
+*/
