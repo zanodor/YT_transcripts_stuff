@@ -1,0 +1,64 @@
+{
+	"schemaVersion": "0.1.0",
+	"name": "YouTubeTranscript",
+	"behavior": "create",
+	"noteContentFormat": "# MI Összefoglaló\n\nSzerző: {{author}}\n<iframe width=\"100%\" height=\"315\" class=\"w-full rounded-btn\" src=\"https://www.youtube-nocookie.com/embed/{{url|replace:\"/.*[?&]v=([a-zA-Z0-9_-]{11}).*|.*youtu\\.be\\/([a-zA-Z0-9_-]{11}).*|.*\\/embed\\/([a-zA-Z0-9_-]{11}).*|.*\\/v\\/([a-zA-Z0-9_-]{11}).*/\":\"$1$2$3$4\"}}?enablejsapi=1\" title=\"{{title|replace:\"/[\\\\/\\:*?\\\"<>\\|]/g\":\"-\"}}\" frameborder=\"0\" allow=\"clipboard-write; encrypted-media; picture-in-picture ;web-share\" allowfullscreen=\"\" id=\"widget2\"></iframe>\n\n",
+	"properties": [
+		{
+			"name": "title",
+			"value": "{{title|replace:\\\"/[?]/g\\\":\\\"？\\\",\\\"/[\\\\/\\:*\\\\\"<>\\|]/g\\\":\\\"-\\\"}}",
+			"type": "text"
+		},
+		{
+			"name": "aliases",
+			"value": "",
+			"type": "multitext"
+		},
+		{
+			"name": "source",
+			"value": "{{url|replace:\\\"/([?&]list=[^&]*)|([?&]index=[^&]*)|([?&]t=[^&]*)|([?&]start=[^&]*)|([?&]feature=[^&]*)|([?&]ab_channel=[^&]*)/g\\\":\\\"\\\"}}",
+			"type": "text"
+		},
+		{
+			"name": "description",
+			"value": "{{description|replace:\\\"/-/g\\\":\\\"\\\"}}",
+			"type": "text"
+		},
+		{
+			"name": "banner",
+			"value": "WarFlagofHungary1939-1945.png",
+			"type": "multitext"
+		},
+		{
+			"name": "author",
+			"value": "{{author|split:\\\", \\\"|wikilink|join}}",
+			"type": "multitext"
+		},
+		{
+			"name": "tags",
+			"value": "webclip, transcript-summary, transcript-whole",
+			"type": "multitext"
+		},
+		{
+			"name": "processed",
+			"value": "false",
+			"type": "checkbox"
+		},
+		{
+			"name": "published",
+			"value": "{{published}}",
+			"type": "date"
+		},
+		{
+			"name": "date_created",
+			"value": "{{date}}",
+			"type": "datetime"
+		}
+	],
+	"triggers": [
+		"https://www.youtube.com",
+		"https://youtube.com"
+	],
+	"noteNameFormat": "{{title|replace:\"/[?]/g\":\"？\",\"/[\\\\/\\:*\\\"<>\\|]/g\":\"-\"}}",
+	"path": "STICKY/_WEB_CLIPPER/_YT_TRANSCRIPTS"
+}
