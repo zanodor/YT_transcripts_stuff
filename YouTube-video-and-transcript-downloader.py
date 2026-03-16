@@ -13,6 +13,9 @@ import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 
+# Timedtext retrieval and GUI update 010126: https://claude.ai/chat/410b08a3-4664-4ed8-b179-17301e8c7072
+# Re-ticking Cookies: True on 010226
+
 # ==================== CONFIGURATION ====================
 CONFIG = {
     # Available languages with their full names
@@ -44,7 +47,7 @@ CONFIG = {
     "audio_quality": "best",
     
     # Anti-block settings
-	"use_cookies": platform.system() in ("Linux", "Darwin"),
+	"use_cookies": False,
     "cookies_browser": "firefox",
     "cookies_file_path": None,
     "retry_attempts": 3,
@@ -819,7 +822,7 @@ antiblock_frame = ttk.LabelFrame(main_frame, text="🛡️ Anti-Block", padding=
 antiblock_frame.pack(fill=tk.X, pady=(5, 5))
 
 use_cookies_var = tk.BooleanVar(value=CONFIG["use_cookies"])
-ttk.Checkbutton(antiblock_frame, text="Use cookies (recommended)", 
+ttk.Checkbutton(antiblock_frame, text="Use cookies", 
                 variable=use_cookies_var).pack(anchor="w")
 
 row1 = ttk.Frame(antiblock_frame)
