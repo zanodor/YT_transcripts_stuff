@@ -12,10 +12,9 @@ import json
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
-
 # Timedtext retrieval and GUI update 010126: https://claude.ai/chat/410b08a3-4664-4ed8-b179-17301e8c7072
 # Re-ticking Cookies: True on 010226
-
+# Hyphenated language code fix 170326
 # ==================== CONFIGURATION ====================
 CONFIG = {
     # Available languages with their full names
@@ -47,7 +46,7 @@ CONFIG = {
     "audio_quality": "best",
     
     # Anti-block settings
-	"use_cookies": False,
+    "use_cookies": False,
     "cookies_browser": "firefox",
     "cookies_file_path": None,
     "retry_attempts": 3,
@@ -57,7 +56,6 @@ CONFIG = {
     "use_timedtext_fallback": True,  # Try direct timedtext API when yt-dlp fails
     "accept_any_language": False,  # Accept any available language if preferred ones not found
 }
-
 # Set root directory based on platform using pathlib
 if platform.system() == "Windows":
     BASE_PATH = Path.home() / "Downloads"
@@ -65,8 +63,26 @@ elif platform.system() == "Linux":
     BASE_PATH = Path.home() / "Downloads"
 else:
     BASE_PATH = Path.home() / "Downloads"
-
 BASE_PATH = str(BASE_PATH)
+
+
+def lang_matches(track_lang_code, preferred_lang):
+    """
+    Check if a track language code matches a preferred base language code.
+    Handles hyphenated variants: 'en' matches 'en-GB', 'en-US', 'en-gb', etc.
+    Also handles underscore variants: 'zh_Hans', 'pt_BR', etc.
+    Case-insensitive comparison.
+    """
+    track = track_lang_code.lower().replace('_', '-')
+    preferred = preferred_lang.lower().replace('_', '-')
+    # Exact match
+    if track == preferred:
+        return True
+    # Variant match: track starts with preferred + hyphen (e.g. 'en-gb' starts with 'en-')
+    if track.startswith(preferred + '-'):
+        return True
+    return False
+
 
 def check_yt_dlp():
     """Check if yt-dlp is installed and yt-dlp-ejs component is available."""
@@ -83,6 +99,7 @@ def check_yt_dlp():
         return True, version, ejs_available
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False, None, False
+
 
 def extract_video_id(url):
     """Extract video ID from various YouTube URL formats."""
@@ -106,6 +123,7 @@ def extract_video_id(url):
                 return video_id
     
     return None
+
 
 def get_available_captions_timedtext(video_url, progress_callback=None):
     """Get available captions directly from YouTube's timedtext API."""
@@ -160,6 +178,7 @@ def get_available_captions_timedtext(video_url, progress_callback=None):
         
     except Exception as e:
         raise RuntimeError(f"Failed to fetch caption list: {str(e)}")
+
 
 def download_timedtext_captions(base_url, video_id, lang_code, video_title, is_auto=False, progress_callback=None):
     """Download captions directly from timedtext API."""
@@ -231,6 +250,7 @@ def download_timedtext_captions(base_url, video_id, lang_code, video_title, is_a
     except Exception as e:
         raise RuntimeError(f"Failed to download timedtext captions: {str(e)}")
 
+
 def get_base_command_with_antiblock():
     """Build base yt-dlp command with anti-block measures."""
     cmd = ["yt-dlp"]
@@ -254,6 +274,7 @@ def get_base_command_with_antiblock():
     
     return cmd
 
+
 def get_video_title(video_url):
     """Get video title for better file naming."""
     for attempt in range(CONFIG["retry_attempts"]):
@@ -270,6 +291,7 @@ def get_video_title(video_url):
             return "Unknown_Title"
     return "Unknown_Title"
 
+
 def clean_filename(title, max_length=40):
     """Clean filename with improved character handling."""
     title = re.sub(r'[<>:"/\\|?*]', '', title)
@@ -282,6 +304,7 @@ def clean_filename(title, max_length=40):
         return "video"
     
     return title[:max_length]
+
 
 def download_video(video_url, output_path, max_res, progress_callback=None):
     """Download video from YouTube with improved progress messages."""
@@ -349,6 +372,41 @@ def download_video(video_url, output_path, max_res, progress_callback=None):
             error_msg = f"Download failed after {CONFIG['retry_attempts']} attempts: {e.stderr if e.stderr else 'Unknown error'}\n"
             raise RuntimeError(error_msg)
 
+
+def find_subtitle_file(output_dir, video_id, lang, sub_type, fmt):
+    """
+    Find a subtitle file that matches the video_id and base language code.
+    Handles hyphenated variants like en-GB, en-US, zh-Hans, pt-BR, etc.
+    
+    yt-dlp saves files as:
+      manual:  {video_id}.{lang_code}.{fmt}          e.g. abc123.en-GB.vtt
+      auto:    {video_id}.{lang_code}.auto.{fmt}     e.g. abc123.en.auto.vtt
+               or {video_id}.{lang_code}.auto-generated.{fmt}
+    """
+    output_dir = Path(output_dir)
+
+    if sub_type == "auto":
+        # Match: video_id.<lang or lang-variant>.auto*.fmt
+        # Glob all auto subtitle files for this video
+        for candidate in output_dir.glob(f"{video_id}.*.{fmt}"):
+            name = candidate.stem  # e.g. "abc123.en-GB.auto" or "abc123.en.auto-generated"
+            parts = name.split('.')
+            # parts[0] = video_id, parts[1] = lang_code, parts[2+] = "auto" or "auto-generated"
+            if len(parts) >= 3 and lang_matches(parts[1], lang) and 'auto' in parts[2].lower():
+                return candidate
+    else:
+        # Manual: video_id.<lang or lang-variant>.fmt
+        # But NOT the auto ones (no "auto" in stem beyond lang code)
+        for candidate in output_dir.glob(f"{video_id}.*.{fmt}"):
+            name = candidate.stem  # e.g. "abc123.en-GB"
+            parts = name.split('.')
+            # parts[0] = video_id, parts[1] = lang_code, no further parts for manual
+            if len(parts) == 2 and lang_matches(parts[1], lang):
+                return candidate
+
+    return None
+
+
 def download_and_parse_subs(video_url, output_path, language_order, try_auto_first, progress_callback=None):
     """Download and parse subtitles from YouTube video with timedtext fallback."""
     output_dir = Path(output_path)
@@ -369,7 +427,7 @@ def download_and_parse_subs(video_url, output_path, language_order, try_auto_fir
         sub_types = [("manual", "manual"), ("auto", "auto-generated")]
     
     # Try yt-dlp first
-    for i, lang in enumerate(language_order):
+    for lang in language_order:
         lang_name = CONFIG["available_languages"].get(lang, lang.upper())
         
         for sub_type, sub_type_name in sub_types:
@@ -379,41 +437,49 @@ def download_and_parse_subs(video_url, output_path, language_order, try_auto_fir
             for attempt in range(CONFIG["retry_attempts"]):
                 try:
                     cmd = get_base_command_with_antiblock()
-                    
+                    fmt = CONFIG["subtitle_format"]
+
+                    # Use wildcard lang spec so yt-dlp downloads en, en-GB, en-US, etc.
+                    # yt-dlp accepts regex/glob in --sub-lang: "en.*" matches en, en-GB, en-US
+                    lang_pattern = f"{lang}.*"
+
                     if sub_type == "auto":
                         cmd.extend([
                             "--write-auto-sub",
-                            "--sub-lang", lang,
+                            "--sub-lang", lang_pattern,
                             "--skip-download",
-                            "--sub-format", CONFIG["subtitle_format"],
+                            "--sub-format", fmt,
                             "-o", output_template,
                             video_url
                         ])
-                        subtitle_file = output_dir / f"{video_id}.{lang}.auto.{CONFIG['subtitle_format']}"
                     else:
                         cmd.extend([
                             "--write-sub",
-                            "--sub-lang", lang,
+                            "--sub-lang", lang_pattern,
                             "--skip-download",
-                            "--sub-format", CONFIG["subtitle_format"],
+                            "--sub-format", fmt,
                             "-o", output_template,
                             video_url
                         ])
-                        subtitle_file = output_dir / f"{video_id}.{lang}.{CONFIG['subtitle_format']}"
                     
-                    # Use shell=False for better stability
                     subprocess.run(cmd, check=True, capture_output=True, text=True, shell=False)
                     
-                    if subtitle_file.exists():
+                    # Find whichever variant file was actually downloaded
+                    subtitle_file = find_subtitle_file(output_dir, video_id, lang, sub_type, fmt)
+
+                    if subtitle_file and subtitle_file.exists():
+                        # Record the actual language code that was downloaded (e.g. "en-GB")
+                        actual_lang_code = subtitle_file.stem.split('.')[1] if '.' in subtitle_file.stem else lang
+
                         if progress_callback:
-                            progress_callback(f"Processing {lang_name} {sub_type_name} subtitles...")
+                            progress_callback(f"Processing {actual_lang_code} {sub_type_name} subtitles...")
                         
                         with open(subtitle_file, encoding="utf-8") as f:
                             content = f.read()
                         subtitle_file.unlink()
                         
                         lines = []
-                        if CONFIG["subtitle_format"] == "vtt":
+                        if fmt == "vtt":
                             blocks = re.findall(
                                 r"(\d{2}:\d{2}:\d{2}\.\d{3})\s+-->\s+\d{2}:\d{2}:\d{2}\.\d{3}.*?\n(.*?)\n\n", 
                                 content, re.DOTALL)
@@ -441,12 +507,12 @@ def download_and_parse_subs(video_url, output_path, language_order, try_auto_fir
                         sub_type_display = " (auto-generated)" if sub_type == "auto" else ""
                         header = f"# {video_title}\n\n"
                         header += f"**Video ID:** {video_id}  \n"
-                        header += f"**Language:** {lang.upper()}{sub_type_display}  \n"
+                        header += f"**Language:** {actual_lang_code.upper()}{sub_type_display}  \n"
                         header += f"**URL:** [Watch on YouTube]({video_url})  \n\n"
                         header += "---\n\n"
                         transcript = header + "\n".join(lines)
                         
-                        return transcript, video_id, lang, video_title, sub_type
+                        return transcript, video_id, actual_lang_code, video_title, sub_type
                     
                     break
                     
@@ -469,12 +535,14 @@ def download_and_parse_subs(video_url, output_path, language_order, try_auto_fir
             if not caption_tracks:
                 raise RuntimeError("No captions found via TimedText API either")
             
-            # Try languages in order
+            # Try languages in preferred order, respecting auto/manual preference
             for lang in language_order:
-                # Try manual first, then auto
-                for is_auto in [False, True]:
-                    matching_tracks = [t for t in caption_tracks 
-                                     if t['lang_code'] == lang and t['is_auto'] == is_auto]
+                for is_auto in ([True, False] if try_auto_first else [False, True]):
+                    # Use lang_matches() so en-GB is found when 'en' is requested
+                    matching_tracks = [
+                        t for t in caption_tracks
+                        if lang_matches(t['lang_code'], lang) and t['is_auto'] == is_auto
+                    ]
                     
                     if matching_tracks:
                         track = matching_tracks[0]
@@ -497,7 +565,7 @@ def download_and_parse_subs(video_url, output_path, language_order, try_auto_fir
             
             # If no matching language found, return info about available captions
             available_langs = set([t['lang_code'] for t in caption_tracks])
-            raise RuntimeError(f"Requested languages not available. Available: {', '.join(available_langs)}")
+            raise RuntimeError(f"Requested languages not available. Available: {', '.join(sorted(available_langs))}")
             
         except Exception as e:
             lang_names = ", ".join([CONFIG["available_languages"].get(l, l.upper()) for l in language_order])
@@ -505,6 +573,7 @@ def download_and_parse_subs(video_url, output_path, language_order, try_auto_fir
     
     lang_names = ", ".join([CONFIG["available_languages"].get(l, l.upper()) for l in language_order])
     raise RuntimeError(f"No subtitles found in any of the configured languages: {lang_names}")
+
 
 def save_transcript(text, video_id, lang, video_title, output_path):
     """Save transcript to markdown file."""
@@ -521,11 +590,13 @@ def save_transcript(text, video_id, lang, video_title, output_path):
         f.write(text)
     return path
 
+
 def browse_folder(path_var):
     """Open folder browser dialog."""
     folder = filedialog.askdirectory(initialdir=str(BASE_PATH))
     if folder:
         path_var.set(folder)
+
 
 def browse_cookies_file():
     """Open file browser for cookies.txt file."""
@@ -538,14 +609,17 @@ def browse_cookies_file():
         cookies_file_var.set(file)
         CONFIG["cookies_file_path"] = file
 
+
 def update_progress(message, status_label, root):
     """Update progress label."""
     status_label.config(text=message)
     root.update_idletasks()
 
+
 def get_selected_language_order():
     """Get the current language order from the UI listbox."""
     return [lang_listbox.get(i) for i in range(lang_listbox.size())]
+
 
 def update_config_display():
     """Update the configuration display when settings change."""
@@ -562,6 +636,7 @@ def update_config_display():
     langs_text = f"{' → '.join(lang_names)} | {sub_order}"
     subs_config_lang_label.config(text=langs_text)
 
+
 def move_language_up():
     """Move selected language up in priority."""
     selection = lang_listbox.curselection()
@@ -575,6 +650,7 @@ def move_language_up():
     lang_listbox.selection_set(idx - 1)
     update_config_display()
 
+
 def move_language_down():
     """Move selected language down in priority."""
     selection = lang_listbox.curselection()
@@ -587,6 +663,7 @@ def move_language_down():
     lang_listbox.insert(idx + 1, item)
     lang_listbox.selection_set(idx + 1)
     update_config_display()
+
 
 def add_language():
     """Add a language to the priority list."""
@@ -602,6 +679,7 @@ def add_language():
     lang_listbox.insert(tk.END, selected)
     update_config_display()
 
+
 def remove_language():
     """Remove selected language from the priority list."""
     selection = lang_listbox.curselection()
@@ -615,6 +693,7 @@ def remove_language():
     lang_listbox.delete(selection[0])
     update_config_display()
 
+
 def update_antiblock_config():
     """Update anti-block configuration from UI."""
     CONFIG["use_cookies"] = use_cookies_var.get()
@@ -622,6 +701,7 @@ def update_antiblock_config():
     CONFIG["retry_attempts"] = int(retry_var.get())
     CONFIG["use_timedtext_fallback"] = timedtext_fallback_var.get()
     CONFIG["accept_any_language"] = accept_any_lang_var.get()
+
 
 def show_available_captions():
     """Show available captions for a video."""
@@ -670,6 +750,7 @@ def show_available_captions():
             update_progress("Ready", subs_status_label, root)
     
     threading.Thread(target=run, daemon=True).start()
+
 
 def on_submit_subs():
     """Handle subtitle extraction."""
@@ -731,6 +812,7 @@ def on_submit_subs():
     
     threading.Thread(target=run, daemon=True).start()
 
+
 def on_submit_video():
     """Handle video download."""
     url = video_url_entry.get().strip()
@@ -769,43 +851,34 @@ def on_submit_video():
     
     threading.Thread(target=run, daemon=True).start()
 
+
 # ==================== UI (COMPACT) ====================
 root = tk.Tk()
 root.title("YouTube Downloader")
 root.geometry("475x950")
 root.resizable(True, True)
-
 yt_dlp_available, version, ejs_available = check_yt_dlp()
-
 # Create main scrollable canvas
 canvas = tk.Canvas(root)
 scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
 scrollable_frame = ttk.Frame(canvas)
-
 scrollable_frame.bind(
     "<Configure>",
     lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
 )
-
 canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
 canvas.configure(yscrollcommand=scrollbar.set)
-
 # Pack canvas and scrollbar
 canvas.pack(side="left", fill="both", expand=True)
 scrollbar.pack(side="right", fill="y")
-
 # Mouse wheel scrolling
 def _on_mousewheel(event):
     canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-
 canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
 main_frame = ttk.Frame(scrollable_frame, padding=10)
 main_frame.pack(fill=tk.BOTH, expand=True)
-
 ttk.Label(main_frame, text="YouTube Downloader", 
          font=("TkDefaultFont", 14, "bold")).pack(pady=(0, 5))
-
 if yt_dlp_available:
     ttk.Label(main_frame, text=f"✓ yt-dlp {version}",
               foreground="green", font=("TkDefaultFont", 8)).pack(anchor="w")
@@ -816,15 +889,12 @@ if yt_dlp_available:
 else:
     ttk.Label(main_frame, text="⚠ yt-dlp not found",
               foreground="red", font=("TkDefaultFont", 8)).pack(anchor="w")
-
 # Anti-block settings (COMPACT)
 antiblock_frame = ttk.LabelFrame(main_frame, text="🛡️ Anti-Block", padding=5)
 antiblock_frame.pack(fill=tk.X, pady=(5, 5))
-
 use_cookies_var = tk.BooleanVar(value=CONFIG["use_cookies"])
 ttk.Checkbutton(antiblock_frame, text="Use cookies", 
                 variable=use_cookies_var).pack(anchor="w")
-
 row1 = ttk.Frame(antiblock_frame)
 row1.pack(fill=tk.X, pady=(2, 2))
 ttk.Label(row1, text="Browser:").pack(side=tk.LEFT)
@@ -835,47 +905,35 @@ ttk.Combobox(row1, textvariable=browser_var,
 ttk.Label(row1, text="Retries:").pack(side=tk.LEFT)
 retry_var = tk.StringVar(value=str(CONFIG["retry_attempts"]))
 ttk.Spinbox(row1, from_=1, to=10, textvariable=retry_var, width=5).pack(side=tk.LEFT, padx=(5, 0))
-
 timedtext_fallback_var = tk.BooleanVar(value=CONFIG["use_timedtext_fallback"])
 ttk.Checkbutton(antiblock_frame, text="TimedText fallback (when yt-dlp fails)", 
                 variable=timedtext_fallback_var).pack(anchor="w")
-
 accept_any_lang_var = tk.BooleanVar(value=CONFIG["accept_any_language"])
 ttk.Checkbutton(antiblock_frame, text="Accept any language if preferred not found", 
                 variable=accept_any_lang_var).pack(anchor="w")
-
 notebook = ttk.Notebook(main_frame)
 notebook.pack(fill=tk.BOTH, expand=True, pady=(5, 5))
-
 # ==================== SUBTITLES TAB (COMPACT) ====================
 subs_frame = ttk.Frame(notebook, padding=8)
 notebook.add(subs_frame, text="Subtitles")
-
 # Language priority (COMPACT)
 lang_frame = ttk.LabelFrame(subs_frame, text="Language Priority", padding=5)
 lang_frame.pack(fill=tk.X, pady=(0, 5))
-
 lang_container = ttk.Frame(lang_frame)
 lang_container.pack(fill=tk.X)
-
 left_frame = ttk.Frame(lang_container)
 left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
-
 lang_listbox = tk.Listbox(left_frame, height=3, selectmode=tk.SINGLE)
 lang_listbox.pack(fill=tk.BOTH, expand=True, pady=(0, 3))
-
 for lang in CONFIG["default_language_order"]:
     lang_listbox.insert(tk.END, lang)
-
 button_frame = ttk.Frame(left_frame)
 button_frame.pack(fill=tk.X)
 ttk.Button(button_frame, text="↑", command=move_language_up, width=4).pack(side=tk.LEFT, padx=(0, 2))
 ttk.Button(button_frame, text="↓", command=move_language_down, width=4).pack(side=tk.LEFT, padx=(0, 2))
 ttk.Button(button_frame, text="✕", command=remove_language, width=4).pack(side=tk.LEFT)
-
 right_frame = ttk.Frame(lang_container)
 right_frame.pack(side=tk.LEFT, fill=tk.Y)
-
 ttk.Label(right_frame, text="Add:", font=("TkDefaultFont", 8)).pack(anchor="w")
 available_lang_var = tk.StringVar()
 lang_dropdown = ttk.Combobox(right_frame, textvariable=available_lang_var, 
@@ -883,13 +941,10 @@ lang_dropdown = ttk.Combobox(right_frame, textvariable=available_lang_var,
                              state="readonly", width=8)
 lang_dropdown.pack(pady=(2, 2))
 ttk.Button(right_frame, text="+", command=add_language, width=4).pack()
-
 lang_listbox.bind('<<ListboxSelect>>', lambda e: update_config_display())
-
 auto_first_var = tk.BooleanVar(value=CONFIG["try_auto_first"])
 ttk.Checkbutton(lang_frame, text="Try auto-generated first", 
                 variable=auto_first_var, command=update_config_display).pack(anchor="w", pady=(3, 0))
-
 # Output destination (COMPACT)
 dest_row = ttk.Frame(subs_frame)
 dest_row.pack(fill=tk.X, pady=(0, 3))
@@ -897,23 +952,19 @@ ttk.Label(dest_row, text="Output:", font=("TkDefaultFont", 8)).pack(side=tk.LEFT
 subs_dest_var = tk.StringVar(value="clipboard")
 ttk.Radiobutton(dest_row, text="Clipboard", variable=subs_dest_var, value="clipboard").pack(side=tk.LEFT)
 ttk.Radiobutton(dest_row, text="File", variable=subs_dest_var, value="file").pack(side=tk.LEFT, padx=(5, 0))
-
 # Config display
 config_frame = ttk.LabelFrame(subs_frame, text="Config", padding=3)
 config_frame.pack(fill=tk.X, pady=(0, 5))
 subs_config_lang_label = ttk.Label(config_frame, text="", font=("TkDefaultFont", 8))
 subs_config_lang_label.pack(anchor="w")
 update_config_display()
-
 # URL
 subs_url_frame = ttk.LabelFrame(subs_frame, text="YouTube URL", padding=3)
 subs_url_frame.pack(fill=tk.X, pady=(0, 3))
 subs_url_entry = ttk.Entry(subs_url_frame, font=("TkDefaultFont", 9))
 subs_url_entry.pack(fill=tk.X)
-
 check_captions_button = ttk.Button(subs_frame, text="🔍 Check Captions", command=show_available_captions)
 check_captions_button.pack(pady=(0, 3))
-
 # Output path
 subs_path_frame = ttk.LabelFrame(subs_frame, text="Output Folder", padding=3)
 subs_path_frame.pack(fill=tk.X, pady=(0, 5))
@@ -924,37 +975,29 @@ subs_path_entry = ttk.Entry(subs_path_input_frame, textvariable=subs_path_var, f
 subs_path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
 ttk.Button(subs_path_input_frame, text="...", command=lambda: browse_folder(subs_path_var), 
           width=3).pack(side=tk.RIGHT, padx=(3, 0))
-
 subs_submit_button = ttk.Button(subs_frame, text="Extract Subtitles", command=on_submit_subs)
 subs_submit_button.pack(pady=5)
 if not yt_dlp_available:
     subs_submit_button.config(state="disabled")
-
 subs_progress_bar = ttk.Progressbar(subs_frame, mode='indeterminate')
 subs_progress_bar.pack(fill=tk.X, pady=(0, 2))
-
 subs_status_label = ttk.Label(subs_frame, text="Ready", font=("TkDefaultFont", 8))
 subs_status_label.pack()
-
 # ==================== VIDEO TAB (COMPACT) ====================
 video_frame = ttk.Frame(notebook, padding=8)
 notebook.add(video_frame, text="Video")
-
 video_config_frame = ttk.LabelFrame(video_frame, text="Video Config", padding=5)
 video_config_frame.pack(fill=tk.X, pady=(0, 5))
-
 res_row = ttk.Frame(video_config_frame)
 res_row.pack(fill=tk.X)
 ttk.Label(res_row, text="Max Resolution:").pack(side=tk.LEFT)
 video_res_var = tk.StringVar(value=CONFIG["max_resolution"])
 ttk.Combobox(res_row, textvariable=video_res_var, values=["1080", "720", "480", "360"],
             state="readonly", width=8).pack(side=tk.LEFT, padx=(5, 0))
-
 video_url_frame = ttk.LabelFrame(video_frame, text="YouTube URL", padding=3)
 video_url_frame.pack(fill=tk.X, pady=(0, 5))
 video_url_entry = ttk.Entry(video_url_frame, font=("TkDefaultFont", 9))
 video_url_entry.pack(fill=tk.X)
-
 video_path_frame = ttk.LabelFrame(video_frame, text="Output Folder", padding=3)
 video_path_frame.pack(fill=tk.X, pady=(0, 5))
 video_path_input_frame = ttk.Frame(video_path_frame)
@@ -964,31 +1007,23 @@ video_path_entry = ttk.Entry(video_path_input_frame, textvariable=video_path_var
 video_path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
 ttk.Button(video_path_input_frame, text="...", command=lambda: browse_folder(video_path_var),
           width=3).pack(side=tk.RIGHT, padx=(3, 0))
-
 video_submit_button = ttk.Button(video_frame, text="Download Video", command=on_submit_video)
 video_submit_button.pack(pady=5)
 if not yt_dlp_available:
     video_submit_button.config(state="disabled")
-
 video_progress_bar = ttk.Progressbar(video_frame, mode='indeterminate')
 video_progress_bar.pack(fill=tk.X, pady=(0, 2))
-
 video_status_label = ttk.Label(video_frame, text="Ready", font=("TkDefaultFont", 8))
 video_status_label.pack()
-
 # Instructions (COMPACT)
 instructions_frame = ttk.LabelFrame(main_frame, text="Info", padding=5)
 instructions_frame.pack(fill=tk.X, pady=(2, 0))
-
 instructions_text = """• Check Captions: See all available subtitle tracks
 • TimedText Fallback: Direct API when yt-dlp fails
 • Accept Any Language: Download first available if preferred not found
 • Browser Cookies: Best anti-block protection"""
-
 ttk.Label(instructions_frame, text=instructions_text, justify=tk.LEFT, 
          font=("TkDefaultFont", 8)).pack(anchor="w")
-
 # Cookie file browser (hidden by default, add if needed)
 cookies_file_var = tk.StringVar(value="")
-
 root.mainloop()
