@@ -1,10 +1,3 @@
----
-copilot-command-context-menu-enabled: true
-copilot-command-slash-enabled: true
-copilot-command-context-menu-order: 1150
-copilot-command-model-key: ""
-copilot-command-last-used: 1773278114499
----
 Take your time to thoroughly analyze the content – we have all the time in the world. Summarize {activeNote} in Markdown format. Use appropriate H1 to H4 headers.
 
 ### QUALITY ASSURANCE:
@@ -83,6 +76,10 @@ Make sure that when card names consist multiple text strings, they are enclosed 
 Make sure also that when using new line characters, HTML tags are closed and you need to open them again:
 - WRONG: `<b>A magyarság felszámolásának\nelőkészített forgatókönyve</b>`
 - RIGHT: `<b>A magyarság felszámolásának</b>\n<b>előkészített forgatókönyve</b>`
+
+Use single quotes instead of double quotes in labels (double quotes have different effect in labels):  
+- WRONG:  `hazaarulas_halozata -up-> keri : "Zelenszkij vagy Orbán" üzenet`
+- RIGHT: `hazaarulas_halozata -up-> keri : 'Zelenszkij vagy Orbán' üzenet`
 
 Also, explanations always should come after with colons, not embedded into arrows!
 - WRONG: `palast -- "felel meg" -> vizonto`
