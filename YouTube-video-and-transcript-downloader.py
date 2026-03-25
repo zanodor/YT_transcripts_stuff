@@ -12,9 +12,7 @@ import json
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
-# Timedtext retrieval and GUI update 010126: https://claude.ai/chat/410b08a3-4664-4ed8-b179-17301e8c7072
-# Re-ticking Cookies: True on 010226
-# Hyphenated language code fix 170326
+
 # ==================== CONFIGURATION ====================
 CONFIG = {
     # Available languages with their full names
@@ -55,6 +53,7 @@ CONFIG = {
     # NEW: TimedText fallback settings
     "use_timedtext_fallback": True,  # Try direct timedtext API when yt-dlp fails
     "accept_any_language": False,  # Accept any available language if preferred ones not found
+    "debug_timedtext_fallback": False,
 }
 # Set root directory based on platform using pathlib
 if platform.system() == "Windows":
@@ -126,58 +125,86 @@ def extract_video_id(url):
 
 
 def get_available_captions_timedtext(video_url, progress_callback=None):
-    """Get available captions directly from YouTube's timedtext API."""
+    """Get available captions by scraping YouTube watch HTML and extracting caption tracks."""
     video_id = extract_video_id(video_url)
     if not video_id:
         raise ValueError("Could not extract video ID from URL")
-    
+ 
     if progress_callback:
         progress_callback("Fetching available captions from YouTube...")
-    
+ 
     try:
-        # Get video page to extract caption tracks
         watch_url = f"https://www.youtube.com/watch?v={video_id}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
         }
-        
+ 
         req = urllib.request.Request(watch_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with urllib.request.urlopen(req, timeout=15) as response:
             html = response.read().decode('utf-8')
-        
-        # Extract caption tracks from player response
-        caption_tracks = []
-        
-        # Look for captionTracks in the page
-        pattern = r'"captionTracks":\s*(\[.*?\])'
-        match = re.search(pattern, html)
-        
+ 
+        # Prefer ytInitialPlayerResponse as the canonical source.
+        match = re.search(
+            r'ytInitialPlayerResponse\s*=\s*(\{.+?\});(?:var\s|</script>)',
+            html,
+            re.DOTALL,
+        )
+ 
         if match:
-            try:
-                tracks_json = match.group(1)
-                # Fix common JSON issues
-                tracks_json = tracks_json.replace('\\"', '"')
-                tracks = json.loads(tracks_json)
-                
-                for track in tracks:
-                    lang_code = track.get('languageCode', 'unknown')
-                    lang_name = track.get('name', {}).get('simpleText', lang_code)
-                    base_url = track.get('baseUrl', '')
-                    is_auto = track.get('kind', '') == 'asr'
-                    
-                    caption_tracks.append({
-                        'lang_code': lang_code,
-                        'lang_name': lang_name,
-                        'base_url': base_url,
-                        'is_auto': is_auto
-                    })
-            except json.JSONDecodeError:
-                pass
-        
+            player_json_str = match.group(1)
+            player_data = json.loads(player_json_str)
+            player_captions = (
+                player_data
+                .get('captions', {})
+                .get('playerCaptionsTracklistRenderer', {})
+                .get('captionTracks', [])
+            )
+        else:
+            # Fallback: capture captionTracks block directly (less reliable, but can help).
+            match2 = re.search(r'"captionTracks"\s*:\s*(\[.*?\])', html, re.DOTALL)
+            if not match2:
+                if CONFIG.get("debug_timedtext_fallback"):
+                    sys.stderr.write("DEBUG: ytInitialPlayerResponse not found. Page snippet:\n")
+                    sys.stderr.write(html[:2000] + "\n")
+                raise RuntimeError("Could not locate player response in page")
+ 
+            tracks_raw = match2.group(1)
+            tracks_raw = tracks_raw.encode('utf-8').decode('unicode_escape', errors='replace')
+            player_captions = json.loads(tracks_raw)
+ 
+        caption_tracks = []
+        for track in player_captions:
+            lang_code = track.get('languageCode', 'unknown')
+ 
+            name_obj = track.get('name', {})
+            if isinstance(name_obj, dict):
+                lang_name = (
+                    name_obj.get('simpleText')
+                    or ''.join(r.get('text', '') for r in name_obj.get('runs', []))
+                    or lang_code
+                )
+            else:
+                lang_name = str(name_obj)
+ 
+            base_url = track.get('baseUrl', '')
+            is_auto = track.get('kind', '') == 'asr'
+ 
+            if base_url:
+                caption_tracks.append({
+                    'lang_code': lang_code,
+                    'lang_name': lang_name,
+                    'base_url': base_url,
+                    'is_auto': is_auto,
+                })
+ 
         return caption_tracks, video_id
-        
+ 
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Failed to parse player JSON: {e}")
     except Exception as e:
-        raise RuntimeError(f"Failed to fetch caption list: {str(e)}")
+        raise RuntimeError(f"Failed to fetch caption list: {e}")
 
 
 def download_timedtext_captions(base_url, video_id, lang_code, video_title, is_auto=False, progress_callback=None):
@@ -373,6 +400,15 @@ def download_video(video_url, output_path, max_res, progress_callback=None):
             raise RuntimeError(error_msg)
 
 
+def cleanup_subtitle_files(output_dir, video_id, fmt):
+    """Delete ALL subtitle temp files for a given video_id (any language, any type)."""
+    for f in Path(output_dir).glob(f"{video_id}.*.{fmt}"):
+        try:
+            f.unlink()
+        except OSError:
+            pass
+
+
 def find_subtitle_file(output_dir, video_id, lang, sub_type, fmt):
     """
     Find a subtitle file that matches the video_id and base language code.
@@ -476,7 +512,9 @@ def download_and_parse_subs(video_url, output_path, language_order, try_auto_fir
                         
                         with open(subtitle_file, encoding="utf-8") as f:
                             content = f.read()
-                        subtitle_file.unlink()
+                        # Delete ALL subtitle temp files for this video (yt-dlp may have
+                        # downloaded multiple variants, e.g. en-GB.vtt AND en-US.vtt)
+                        cleanup_subtitle_files(output_dir, video_id, fmt)
                         
                         lines = []
                         if fmt == "vtt":
