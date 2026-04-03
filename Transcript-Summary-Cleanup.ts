@@ -1,5 +1,12 @@
 import * as obsidian from 'obsidian';
 
+// 250325 Update: Script now can be used for subsequent runs to update content based on newly added replacement rules
+// 170625 Update: Script is now configurable to replace list markers (- or *) with N-dashes to try and make these look good on Archive.ph
+// 160725 Update: Contains lookbehind now (see 'speaker') so will NOT work on mobile but I did not intend to use this on mobile either
+// 191225 Update: Handles conversion of YT timedtext json format
+// 060126 Update: We can use the script in TUDASTAR vault as well to transform offending AI IDE made external links to md files (`[]()`)
+// Chats: https://claude.ai/chat/5b54e748-1812-4d73-806b-200ac1136ffd és https://claude.ai/chat/a44bc0b7-5571-42dd-9085-c2990fc8b8bc
+
 // Configuration
 const CONFIG = {
     replaceListMarkers: true,
@@ -64,12 +71,22 @@ const extractVideoId = (content: string): string | null => {
             return pathParts;
         }
     }
+
+    // Handle BitChute URLs (both www. and old.)
+    if (sourceLine.includes('bitchute.com/video/')) {
+        const parts = sourceLine.split('bitchute.com/video/');
+        if (parts.length > 1) {
+            const id = parts[1].split(/[\/"'\s?]/)[0];
+            console.log("Found BitChute video ID:", id);
+            return id;
+        }
+    }
     
     return null;
 };
 
 // Helper to determine video platform
-const getVideoPlatform = (content: string): { platform: 'youtube' | 'rumble' | 'videa' | null, id: string | null } => {
+const getVideoPlatform = (content: string): { platform: 'youtube' | 'rumble' | 'videa' | 'bitchute' | null, id: string | null, host: string | null } => {
     // Extract source line
     const lines = content.split('\n');
     let sourceLine = '';
@@ -83,20 +100,27 @@ const getVideoPlatform = (content: string): { platform: 'youtube' | 'rumble' | '
     
     // Check for YouTube in source
     if (sourceLine.includes('youtube.com') || sourceLine.includes('youtu.be')) {
-        return { platform: 'youtube', id: extractVideoId(content) };
+        return { platform: 'youtube', id: extractVideoId(content), host: null };
     }
     
     // Check for Rumble in source
     if (sourceLine.includes('rumble.com')) {
-        return { platform: 'rumble', id: extractVideoId(content) };
+        return { platform: 'rumble', id: extractVideoId(content), host: null };
     }
 
     // Check for Videa in source
     if (sourceLine.includes('videa.hu')) {
-        return { platform: 'videa', id: extractVideoId(content) };
+        return { platform: 'videa', id: extractVideoId(content), host: null };
+    }
+
+    // Check for BitChute in source (matches both www. and old.)
+    if (sourceLine.includes('bitchute.com')) {
+        const isOld = sourceLine.includes('old.bitchute.com');
+        const host = isOld ? 'old.bitchute.com' : 'www.bitchute.com';
+        return { platform: 'bitchute', id: extractVideoId(content), host };
     }
     
-    return { platform: null, id: null };
+    return { platform: null, id: null, host: null };
 };
 
 // Parse timestamp to seconds
@@ -249,7 +273,7 @@ const fixIncorrectTimestamps = (content: string): string => {
 };
 
 // Fix existing timestamp links with simpler string operations
-const fixExistingTimestampLinks = (content: string, platform: 'youtube' | 'rumble' | 'videa' | null, id: string | null): string => {
+const fixExistingTimestampLinks = (content: string, platform: 'youtube' | 'rumble' | 'videa' | 'bitchute' | null, id: string | null, host: string | null): string => {
     if (!id) return content;
     
     const lines = content.split('\n');
@@ -303,6 +327,13 @@ const fixExistingTimestampLinks = (content: string, platform: 'youtube' | 'rumbl
                         } else {
                             seconds = parseTimestamp(timestampText);
                         }
+                    } else if (oldUrl.includes('bitchute.com')) {
+                        const timeMatches = oldUrl.match(/[?&]t=(\d+)/);
+                        if (timeMatches && timeMatches[1]) {
+                            seconds = parseInt(timeMatches[1]);
+                        } else {
+                            seconds = parseTimestamp(timestampText);
+                        }
                     } else {
                         seconds = parseTimestamp(timestampText);
                     }
@@ -316,6 +347,9 @@ const fixExistingTimestampLinks = (content: string, platform: 'youtube' | 'rumbl
                         newUrl = `https://rumble.com/${id}${seconds > 0 ? `?start=${seconds}` : ''}`;
                     } else if (platform === 'videa') {
                         newUrl = `https://videa.hu/videok/${id}${seconds > 0 ? `?start=${seconds}` : ''}`;
+                    } else if (platform === 'bitchute') {
+                        const resolvedHost = host || 'www.bitchute.com';
+                        newUrl = `https://${resolvedHost}/video/${id}/`;
                     }
                     
                     // Replace the entire link if we have a new URL
@@ -340,7 +374,7 @@ const fixExistingTimestampLinks = (content: string, platform: 'youtube' | 'rumbl
 };
 
 // Link unlinked timestamps
-const linkUnlinkedTimestamps = (content: string, platform: 'youtube' | 'rumble' | 'videa' | null, id: string | null): string => {
+const linkUnlinkedTimestamps = (content: string, platform: 'youtube' | 'rumble' | 'videa' | 'bitchute' | null, id: string | null, host: string | null): string => {
     if (!id) return content;
     
     const lines = content.split('\n');
@@ -375,6 +409,9 @@ const linkUnlinkedTimestamps = (content: string, platform: 'youtube' | 'rumble' 
                 newUrl = `https://rumble.com/${id}${seconds > 0 ? `?start=${seconds}` : ''}`;
             } else if (platform === 'videa') {
                 newUrl = `https://videa.hu/videok/${id}${seconds > 0 ? `?start=${seconds}` : ''}`;
+            } else if (platform === 'bitchute') {
+                const resolvedHost = host || 'www.bitchute.com';
+                newUrl = `https://${resolvedHost}/video/${id}/`;
             }
             
             if (newUrl) {
@@ -411,6 +448,9 @@ const linkUnlinkedTimestamps = (content: string, platform: 'youtube' | 'rumble' 
                 newUrl = `https://rumble.com/${id}${seconds > 0 ? `?start=${seconds}` : ''}`;
             } else if (platform === 'videa') {
                 newUrl = `https://videa.hu/videok/${id}${seconds > 0 ? `?start=${seconds}` : ''}`;
+            } else if (platform === 'bitchute') {
+                const resolvedHost = host || 'www.bitchute.com';
+                newUrl = `https://${resolvedHost}/video/${id}/`;
             }
             
             if (newUrl) {
@@ -726,10 +766,6 @@ const applyStringReplacements = (content: string): string => {
             to: 'Schmidt Mária'
         },
         {
-            from: /krasszusz/gi,
-            to: 'Crassus'
-        },
-        {
             from: /(Mincenti|Mindszenti)/gi,
             to: 'Mindszenty'
         },
@@ -742,7 +778,7 @@ const applyStringReplacements = (content: string): string => {
             to: 'Rákóczi Ferenc'
         },
         {
-            from: /(Nemes Kürti István|Nemeskürti István)/gi,
+            from: /(Nemes Kürti István|Nemeskürth?i István)/gi,
             to: 'Nemeskürty István'
         },
         {
@@ -826,7 +862,7 @@ const applyStringReplacements = (content: string): string => {
             to: 'Luc Montagnier'
         },
         {
-            from: /(Rusin Szendi Romulus|Rusin Sandi Romulus|Rusin Sandy Romulusz|Rusin Sendi Romulus|Rusin Szendy Romulus|Rusin Sandy Romulus|Rusin Szendi Romulusz|Ruszin Szendi Romulusz|Ruszin Szendy Romulus|Ruszin Szendy Romulusz)/gi,
+            from: /(Rusin Szendi Romulus|Rusin Sandi Romulus|Rusin Sandy Romulusz|Rusin Sendi Romulus|Rusin Szendy Romulus|Rusin Sandy Romulus|Rusin Szendi Romulusz|Ruszin Szendi Romulusz|Ruszin Szendy Romulus|Ruszin Szendy Romulusz|Ruszin-Szendy Romulus|Rin Szendy Romulusz)/gi,
             to: 'Ruszin-Szendi Romulusz'
         },
         {
@@ -950,11 +986,11 @@ const applyStringReplacements = (content: string): string => {
             to: 'Révay Péter'
         },
         {
-            from: /Krasszusz/gi,
+            from: /(Krassus|Krasszusz)/gi,
             to: 'Crassus'
         },
         {
-            from: /(Pe[tc]z?enhoffer Antal|Pecinh?o Hoffer Antal)/gi,
+            from: /(Pe[tc]z?enhoffer Antal|Pecinh?o Hoffer Antal|Petunhoffer Antal)/gi,
             to: 'Peczenhoffer Antal'
         },
         {
@@ -1006,8 +1042,68 @@ const applyStringReplacements = (content: string): string => {
             to: 'Demokratikus Koalíció'
         },
         {
-            from: /(Szártó Péter|Szíjjártó Péter)/gi,
+            from: /(Szártó Péter|Szírtó Péter|Szíjjártó Péter|Szíjártó Péter|Szijártó Péter)/gi,
             to: 'Szijjártó Péter'
+        },
+        {
+            from: /Kraszna Horkai/gi,
+            to: 'Krasznahorkai'
+        },
+        {
+            from: /Zrinyi /g,
+            to: 'Zrínyi '
+        },
+        {
+            from: /Kirityán Zsolt/gi,
+            to: 'Tyirityán Zsolt'
+        },
+        {
+            from: /(HVM|64 VMIM)/g,
+            to: 'HVIM'
+        },
+        {
+            from: /Kolonics László/gi,
+            to: 'Kolonits László'
+        },
+        {
+            from: /(Badinyi Jós|Badinyi-Jós|Badiny-Jós)/gi,
+            to: 'Badiny Jós'
+        },
+        {
+            from: /Cseber Roland/gi,
+            to: 'Tseber Roland'
+        },
+        {
+            from: /(Dérsolt|Dér Solt)/gi,
+            to: 'Dér Zsolt'
+        },
+        {
+            from: /(Kónyi Kisbotond|Kónyi Kis Botond)/gi,
+            to: 'Kónyi-Kiss Botond'
+        },
+        {
+            from: /második Rákóczi Ferenc/gi,
+            to: 'II. Rákóczi Ferenc'
+        },
+        {
+            from: /\[\.\.\.\]/gi,
+            to: '\[...\]'
+        },
+        {
+            from: /eltusol/g,
+            to: 'eltussol'
+        },
+        {
+            from: /fedhetetlen/gi,
+            to: 'feddhetetlen'
+        },
+        {
+            from: /placehooolder3/gi,
+            to: 'placehooolder3'
+        },
+        {
+            from: /placehooolder3/gi,
+            to: 'placehooolder3'
         },
         {
             from: /placehooolder3/gi,
@@ -1272,6 +1368,8 @@ const applyStringReplacements = (content: string): string => {
                         timeParam = `?start=${seconds}`;
                     } else if (templateUrl.includes('videa.hu')) {
                         timeParam = `?start=${seconds}`;
+                    } else if (templateUrl.includes('bitchute.com')) {
+                        timeParam = '';
                     }
                     
                     return `[${timestamp}](${urlBase}${timeParam})`;
@@ -1586,11 +1684,11 @@ const transcriptSummaryCleanup = async (app: obsidian.App): Promise<void> => {
     let updatedContent = applyStringReplacements(fileContent);
     updatedContent = replaceHyphensOutsideYaml(updatedContent);
     updatedContent = fixIncorrectTimestamps(updatedContent);
-    const { platform, id } = getVideoPlatform(updatedContent);
+    const { platform, id, host } = getVideoPlatform(updatedContent);
     console.log("Detected video platform:", platform, "with ID:", id);
     if (platform && id) {
-        updatedContent = fixExistingTimestampLinks(updatedContent, platform, id);
-        updatedContent = linkUnlinkedTimestamps(updatedContent, platform, id);
+        updatedContent = fixExistingTimestampLinks(updatedContent, platform, id, host);
+        updatedContent = linkUnlinkedTimestamps(updatedContent, platform, id, host);
         updatedContent = removeDuplicateTranscriptLines(updatedContent);
     }
     
